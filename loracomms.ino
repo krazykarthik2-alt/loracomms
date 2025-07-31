@@ -1,6 +1,8 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <math.h>
+#include <QMC5883LCompass.h>
+QMC5883LCompass compass;
 
 U8G2_SH1106_128X64_NONAME_2_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
@@ -177,10 +179,12 @@ void drawCompass() {
   static int i = 0;
   render();
   if (((i++) % 10) != 0)return;
+  compass.read();
+  int heading = (360 + compass.getAzimuth()) % 360;
+  int realHeading = (heading + 90) % 360;
+  int angledeg = (360 - heading) % 360;
+  float angle = radians(( 180 + angledeg )%360);  // Invert to make North fixed
 
-  float fakeHeading = (millis()/70 % 360 );  // Just rotates for demo
-  int realHeading = ((int)fakeHeading + 90) % 360;
-  float angle = radians(fakeHeading);  // Convert to radians
   u8g2.firstPage();
   do {
     u8g2.setCursor(LEFT_PADDING, 12);
@@ -188,7 +192,7 @@ void drawCompass() {
     u8g2.setCursor(LEFT_PADDING, 24);
     u8g2.print("MODE");
     if (realHeading < NEGLIGIBLE_DEG || realHeading > (360 - NEGLIGIBLE_DEG)) {
- 
+
       u8g2.drawDisc((SCREEN_WIDTH) / 2, (SCREEN_HEIGHT) / 2, COMPASS_W);
       u8g2.setDrawColor(0);
       u8g2.setCursor(SCREEN_WIDTH / 2  , SCREEN_HEIGHT / 2 );
@@ -201,7 +205,8 @@ void drawCompass() {
     //    drawArrow(int cx,int cy,float angle,int len,int arrow_head_diff,float headAngle,int headlen,int padding_circle)
     u8g2.setCursor(SCREEN_WIDTH - 40 - LEFT_PADDING, SCREEN_HEIGHT - LINE_HEIGHT / 2);
     u8g2.print(realHeading);
-    u8g2.print(" deg");
+    u8g2.print(":");
+    u8g2.print(angledeg);
   } while (u8g2.nextPage());
 
 }
@@ -282,7 +287,15 @@ void drawChatWithUser() {
 
 }
 
+float Degrees(float x) {
+  return x * 180.0 / PI;
+}
 void drawLocationPerson() {
+  compass.read();
+  int heading = compass.getAzimuth();
+
+  int realHeading = ((int)heading + 90) % 360;
+
   Location person = locationList[locationUserIndex];
 
   // Randomize target's location slightly each time
@@ -290,7 +303,8 @@ void drawLocationPerson() {
   locationList[locationUserIndex].lon += random(-10, 11) * 0.1;
 
   float dist = calculateDistance(myLat, myLon, person.lat, person.lon);
-  float angle = calculateBearing(myLat, myLon, person.lat, person.lon);
+  float angle = Degrees(calculateBearing(myLat, myLon, person.lat, person.lon));
+  int projectedAngle = (int)(realHeading + angle) % 360;
 
   u8g2.firstPage();
   do {
@@ -302,7 +316,7 @@ void drawLocationPerson() {
     u8g2.print("Lon: "); u8g2.print(person.lon, 3);
     u8g2.setCursor(0, 48);
     u8g2.print("Dist: "); u8g2.print(dist, 0); u8g2.print("m");
-    drawArrow(SCREEN_WIDTH - 30, SCREEN_HEIGHT / 2, angle, LOC_ARROW_FRONT_LEN, LOC_ARROW_BACK_LEN, LOC_ARROW_HEAD_DIFF, LOC_HEADANGLE, LOC_ARROW_HEADLEN, LOC_PADDING_CIRCLE);
+    drawArrow(SCREEN_WIDTH - 30, SCREEN_HEIGHT / 2, radians(projectedAngle), LOC_ARROW_FRONT_LEN, LOC_ARROW_BACK_LEN, LOC_ARROW_HEAD_DIFF, LOC_HEADANGLE, LOC_ARROW_HEADLEN, LOC_PADDING_CIRCLE);
     u8g2.setCursor(0, 60);
     u8g2.print("Updated: ");
     u8g2.print(person.lastUpdated);
@@ -464,6 +478,7 @@ void handleInput() {
 
 void setup() {
   Serial.begin(115000);
+  compass.init();
   Wire.setClock(100000);
   u8g2.begin();
   u8g2.setPowerSave(0);
@@ -518,8 +533,11 @@ void loop() {
   unsigned long dimTime = inChat ? CHAT_DIM_TIME : NORMAL_DIM_TIME;
 
   // Turn off display after full idle timeout
-  if (oledOn && diff > idleTime) {
-    turnOffOled();
+  if (oledOn && diff > idleTime ) {
+    if (screen == SCREEN_COMPASS || screen == SCREEN_LOCATION_PERSON) {
+    } else {
+      turnOffOled();
+    }
   }
   // Dim after dimTime but before full timeout
   else if (!oledDimmed && diff > dimTime && diff <= idleTime) {
