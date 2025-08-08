@@ -164,7 +164,7 @@ void handleInput() {
       } else if (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) {
         if (currentText.length() > 0) {
           if (screen == SCREEN_GROUPCHAT)
-            addGroupMessage("You", currentText);
+            addGroupMessage("You", currentText.c_str());
           else {
             addMessage(selectedIndex, myDeviceId, currentText);
           }
