@@ -55,6 +55,7 @@ String decodeMorse(String morse) {
   if (morse == "-..-") return "X";
   if (morse == "-.--") return "Y";
   if (morse == "--..") return "Z";
+  if( morse == ".-.-.") return "\n";
   return "";
 }
 
@@ -85,8 +86,6 @@ Location locationList[] = {
 
 
 
-float myLat = 17.385;
-float myLon = 78.486;
 
 // ---------- State Management ----------
 
@@ -311,7 +310,7 @@ void drawChatWithUser() {
     u8g2.setCursor(0, MORSE_TOP);
     u8g2.print(morseInput.c_str());
 
-    UserChat& currentChat = allUserChats[chatUserIndex];
+    User& currentChat = allUserChats[chatUserIndex];
     int startOffset = 0;
     const int maxDisplayMessages = 4;
     if (currentChat.messageCount > maxDisplayMessages) {
@@ -454,7 +453,7 @@ void updateScreen() {
   }
   oldhash = newhash;
   Serial.println("re");
-  
+  int userCount = allUserChats.size();
   switch (screen) {
     case SCREEN_MAIN:
       drawMenu(mainMenuItems, mainMenuSize, selectedIndex); break;
