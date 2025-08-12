@@ -1,13 +1,14 @@
 #include "this_display.h"
 #include <Wire.h>
 #include <math.h>
-#define CODE_DEPLOYMENT 0 // 0 for testing 1 for deployment 
+#include <vector>
+#define CODE_DEPLOYMENT 1 // 0 for testing 1 for deployment
 // hey don't remove CODE_DEPLOYMENT
 
 // ---------- Morse Code ----------
-#define TOUCH_MORSE 15
-#define TOUCH_NEXT 13
-#define TOUCH_BACK 4
+#define TOUCH_MORSE 33
+#define TOUCH_NEXT 32
+#define TOUCH_BACK 27
 #define TOUCH_THRESHOLD 50
 
 #define SHORT_THRESHOLD 300
@@ -22,16 +23,32 @@ void markInteraction() {
 
 }
 
-
+void clickSend(std::vector<int> userIds,int chatUserIndex){
+  if (currentText.length() > 0) {
+            if (screen == SCREEN_GROUPCHAT)
+              addGroupMessage("You", currentText.c_str());
+            else {
+              addMessage(userIds[chatUserIndex], myDeviceId, currentText);
+            }
+            sendMessage_lora(currentText, screen == SCREEN_GROUPCHAT, userIds[chatUserIndex]); // Send the current text
+            currentText = ""; // Clear the text field
+          }
+}
 #if CODE_DEPLOYMENT
 void handleInput() {
+int valNext = digitalRead(TOUCH_NEXT);
+int valBack = digitalRead(TOUCH_BACK);
+int valMorse = digitalRead(TOUCH_MORSE);
 
-  int valNext = touchRead(TOUCH_NEXT);
-  int valBack = touchRead(TOUCH_BACK);
-  int valMorse = touchRead(TOUCH_MORSE);
-  if (valNext < TOUCH_THRESHOLD || valBack < TOUCH_THRESHOLD || valMorse < TOUCH_THRESHOLD)
+int userCount = allUserChats.size();
+  std::vector<int> userIds;
+  for (const auto& pair : allUserChats) {
+    userIds.push_back(pair.first);
+  }
+
+  if (valNext ==LOW || valBack ==LOW || valMorse ==LOW)
     markInteraction();
-  if (valBack < TOUCH_THRESHOLD && valNext < TOUCH_THRESHOLD && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) ) {
+  if (valBack ==LOW && valNext ==LOW && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) ) {
     screen = SCREEN_MAIN;
     morseInput = "";
     currentText = "";
@@ -39,7 +56,7 @@ void handleInput() {
     return;
   }
 
-  if ((screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && valMorse < TOUCH_THRESHOLD) {
+  if ((screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && valMorse ==LOW) {
     if (!morseActive) {
       morseStartTime = millis();
       morseActive = true;
@@ -52,22 +69,24 @@ void handleInput() {
     render();
   }
 
-  if (valNext < TOUCH_THRESHOLD && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && !touchActive) {
-    currentText += decodeMorse(morseInput);
+  if (valNext ==LOW && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && !touchActive) {
+    String x = decodeMorse(morseInput);
+    if(x=="\n")clickSend(userIds,chatUserIndex);
+    else {currentText +=x;}
     morseInput = "";
     render();
   }
 
-  if (valBack < TOUCH_THRESHOLD && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && !touchActive) {
+  if (valBack ==LOW && (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) && !touchActive) {
     if (currentText.length() > 0) currentText.remove(currentText.length() - 1);
-    delay(200);
+    
     render();
   }
 
-  if (valBack < TOUCH_THRESHOLD && valNext >= TOUCH_THRESHOLD && (screen == SCREEN_MAIN ||
+  if (valBack ==LOW && valNext == HIGH && (screen == SCREEN_MAIN ||
       screen == SCREEN_CHAT_LIST ||
       screen == SCREEN_LOCATION_LIST || screen == SCREEN_LOCATION_LIST || screen == SCREEN_LOCATION_PERSON || screen == SCREEN_COMPASS)) {
-    while (touchRead(TOUCH_BACK) < TOUCH_THRESHOLD);
+    while (digitalRead(TOUCH_BACK) ==LOW);
     if (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_LIST || screen == SCREEN_LOCATION_LIST  || screen == SCREEN_COMPASS ) {
       screen = SCREEN_MAIN;
     } else if (screen == SCREEN_CHAT_PERSON) {
@@ -78,7 +97,7 @@ void handleInput() {
     render();
   }
 
-  if (valNext < TOUCH_THRESHOLD &&  (
+  if (valNext ==LOW &&  (
         screen == SCREEN_MAIN ||
         screen == SCREEN_CHAT_LIST ||
         screen == SCREEN_LOCATION_LIST)) {
@@ -91,9 +110,9 @@ void handleInput() {
       unsigned long duration = millis() - touchStartTime;
       if (duration < SHORT_THRESHOLD) {
         if (screen == SCREEN_MAIN) {selectedIndex = (selectedIndex + 1) % mainMenuSize; }
-        else if (screen == SCREEN_CHAT_LIST) {chatUserIndex = (userCount == 0 ? 0 : (chatUserIndex + 1) % userCount);}
-        else if (screen == SCREEN_LOCATION_LIST){ locationUserIndex = ( userCount == 0 ? 0 : (locationUserIndex + 1) % userCount);}
-        
+        else if (screen == SCREEN_CHAT_LIST) {chatUserIndex = (userCount == 0 || chatUserIndex >= userCount ? 0 : (chatUserIndex + 1) % userCount);}
+        else if (screen == SCREEN_LOCATION_LIST){ locationUserIndex = ( userCount == 0  || locationUserIndex >= userCount ? 0 : (locationUserIndex + 1) % userCount);}
+
       } else {
         if (screen == SCREEN_MAIN) {
           if (selectedIndex == 0) screen = SCREEN_GROUPCHAT;
@@ -112,12 +131,7 @@ void handleInput() {
           screen = SCREEN_LOCATION_PERSON;
           
         } else if (screen == SCREEN_GROUPCHAT || screen == SCREEN_CHAT_PERSON) {
-          if (currentText.length() > 0) {
-            addGroupMessage("You", currentText);
-            sendMessage_lora(currentText, screen == SCREEN_GROUPCHAT, allUserChats[chatUserIndex].userId); // Send the current text
-            currentText = ""; // Clear the text field
-          }
-          
+          clickSend(userIds,chatUserIndex);          
         }
       }
       touchActive = false;
@@ -127,6 +141,11 @@ void handleInput() {
 }
 #else
 void handleInput() {
+  int userCount = allUserChats.size();
+  std::vector<int> userIds;
+  for (const auto& pair : allUserChats) {
+    userIds.push_back(pair.first);
+  }
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n'); // Read a full line from serial
     command.trim(); // Remove any whitespace
@@ -134,8 +153,8 @@ void handleInput() {
     if (command == "n") { // Next
       markInteraction();
       if (screen == SCREEN_MAIN) selectedIndex = (selectedIndex + 1) % mainMenuSize;
-      else if (screen == SCREEN_CHAT_LIST) chatUserIndex = (userCount == 0 ? 0 : (chatUserIndex + 1) % userCount);
-      else if (screen == SCREEN_LOCATION_LIST) locationUserIndex = ( userCount == 0 ? 0 : (locationUserIndex + 1) % userCount);
+      else if (screen == SCREEN_CHAT_LIST) chatUserIndex = (userCount == 0  || chatUserIndex >= userCount ? 0 : (chatUserIndex + 1) % userCount);
+      else if (screen == SCREEN_LOCATION_LIST) locationUserIndex = ( userCount == 0 || locationUserIndex >= userCount ? 0 : (locationUserIndex + 1) % userCount);
       render();
     } else if (command == "b") { // Back
       markInteraction();
@@ -166,9 +185,9 @@ void handleInput() {
           if (screen == SCREEN_GROUPCHAT)
             addGroupMessage("You", currentText.c_str());
           else {
-            addMessage(selectedIndex, myDeviceId, currentText);
+            addMessage(userIds[chatUserIndex], myDeviceId, currentText);
           }
-          sendMessage_lora(currentText, screen == SCREEN_GROUPCHAT, allUserChats[chatUserIndex].userId); // Send the current text
+          sendMessage_lora(currentText, screen == SCREEN_GROUPCHAT, userIds[chatUserIndex]); // Send the current text
           currentText = ""; // Clear the text field
         }
       }
@@ -187,11 +206,11 @@ void handleInput() {
 }
 #endif
 
-void init_touch() {
-
-  touchAttachInterrupt(TOUCH_NEXT, NULL, TOUCH_THRESHOLD);
-  touchAttachInterrupt(TOUCH_BACK, NULL, TOUCH_THRESHOLD);
-  touchAttachInterrupt(TOUCH_MORSE, NULL, TOUCH_THRESHOLD);
+void init_buttons() {
+pinMode(TOUCH_NEXT, INPUT_PULLUP);
+pinMode(TOUCH_BACK, INPUT_PULLUP);
+pinMode(TOUCH_MORSE, INPUT_PULLUP);
+lastInteractionTime = millis();
 }
 
 
@@ -232,13 +251,27 @@ void setup() {
   draw_inited_screen();
   Serial.println("inited all, tryna init lora");
   init_lora();
-  init_touch();
-  init_users();
-  Serial.println("proceeding to loop");
+  init_buttons();
+  Serial.print("proceeding to loop as");
+  Serial.println(myUserName);
+  
 }
+
+
+unsigned long lastBeaconMillis = 0;
+const unsigned long beaconInterval = 60000; // 1 min
+
 void loop() {
+  unsigned long now = millis();
+
+  // Send beacon every 1 min
+  if (now - lastBeaconMillis >= beaconInterval) {
+    if(sendLocationBeacon())
+    lastBeaconMillis = now;
+  }
+
   updateScreen();
   handleInput();
   handleDisplayInLoop();
-  if (receive_msg_lora() == 0)render();
+  if (receive_msg_lora() == 0) render();
 }
