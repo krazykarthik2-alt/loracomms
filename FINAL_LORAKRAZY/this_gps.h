@@ -1,10 +1,10 @@
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
-
+#include "this_time.h"
 // === GPS Config ===
 // Change pins & serial port according to your board
-#define GPS_RX_PIN 4
-#define GPS_TX_PIN 15
+#define GPS_RX_PIN 15 //use the pin no. labeled tx on neogps6m
+#define GPS_TX_PIN 4 //use the pin no. labeled rx on neogps6m trust me
 #define GPS_BAUD 9600
 
 // TinyGPS++ object
@@ -14,11 +14,28 @@ TinyGPSPlus gps;
 HardwareSerial GPSSerial(1);
 
 // Variables to store last known coordinates
-double currentLat = 0.0;
-double currentLon = 0.0;
+double currentLat = -1;
+double currentLon = -1;
 bool gpsListening = false;
+unsigned long millisAtStart = 0;
 
-// Start GPS listening
+
+float lastKnownLat = -1;
+float lastKnownLon = -1;
+bool getLocation()
+{
+  if (currentLat != -1 && currentLon != -1)
+    return true;
+  else
+    return false;
+}
+void clearLocation()
+{
+  currentLat = currentLon = -1;
+}
+
+
+
 void listenToGPS()
 {
   if (!gpsListening)
@@ -28,12 +45,29 @@ void listenToGPS()
   }
   else
   {
-    if (GPSSerial.available())
-      gps.encode(GPSSerial.read());
+    if (GPSSerial.available()){
+      char r = GPSSerial.read();
+      gps.encode(r);
+    }
+
+    if (gps.location.isUpdated()) {
+      lastKnownLat = currentLat = gps.location.lat();
+      lastKnownLon = currentLon = gps.location.lng();
+      if (gps.date.isValid() && gps.time.isValid()) {
+        millisAtStart = - millis() + gpsToUnixMillis(
+                          gps.date.year(),
+                          gps.date.month(),
+                          gps.date.day(),
+                          gps.time.hour(),
+                          gps.time.minute(),
+                          gps.time.second()
+                        );
+      }
+
+    }
   }
 }
-
-// Stop GPS listening
+// Stop GPS listening 
 void stopListeningToGPS()
 {
   if (gpsListening)
@@ -51,21 +85,3 @@ void clearGPSBuffer()
     GPSSerial.read();
   }
 }
-
-// Try to get a location fix (non-blocking)
-
-float myLat = 17.385;
-float myLon = 78.486;
-bool getLocation()
-{
-  if (myLat != -1 && myLon != -1)
-    return true;
-  else
-    return false;
-}
-void clearLocation()
-{
-  myLat = myLon = -1;
-}
-
-// Send location as LoRa beacon

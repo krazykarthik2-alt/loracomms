@@ -1,7 +1,6 @@
 #include "this_display.h"
 #include <Wire.h>
 #include <math.h>
-#include <vector>
 #define CODE_DEPLOYMENT 1 // 0 for testing 1 for deployment
 // hey don't remove CODE_DEPLOYMENT
 
@@ -17,18 +16,16 @@ unsigned long touchStartTime = 0;
 bool touchActive = false;
 
 void markInteraction() {
-  if (millis() - lastInteractionTime > 0) {
     lastInteractionTime = millis();  // update on any check
-  }
-
+  
 }
 
 void clickSend(std::vector<int> userIds,int chatUserIndex){
   if (currentText.length() > 0) {
             if (screen == SCREEN_GROUPCHAT)
-              addGroupMessage("You", currentText.c_str());
+              addGroupMessage("You", currentText);
             else {
-              addMessage(userIds[chatUserIndex], myDeviceId, currentText);
+              addMessage(userIds[chatUserIndex],myDeviceId, currentText);
             }
             sendMessage_lora(currentText, screen == SCREEN_GROUPCHAT, userIds[chatUserIndex]); // Send the current text
             currentText = ""; // Clear the text field
@@ -213,8 +210,6 @@ pinMode(TOUCH_MORSE, INPUT_PULLUP);
 lastInteractionTime = millis();
 }
 
-
-
 void handleDisplayInLoop() {
 
   unsigned long now = millis();
@@ -254,12 +249,12 @@ void setup() {
   init_buttons();
   Serial.print("proceeding to loop as");
   Serial.println(myUserName);
-  
+  sendLocationAsBeacon();
 }
 
 
 unsigned long lastBeaconMillis = 0;
-const unsigned long beaconInterval = 60000; // 1 min
+const unsigned long beaconInterval = 10000; //change to 1 minute later
 
 void loop() {
   unsigned long now = millis();
@@ -267,9 +262,8 @@ void loop() {
   // Send beacon every 1 min
   if (now - lastBeaconMillis >= beaconInterval) {
     if(sendLocationBeacon())
-    lastBeaconMillis = now;
+      lastBeaconMillis = now;
   }
-
   updateScreen();
   handleInput();
   handleDisplayInLoop();

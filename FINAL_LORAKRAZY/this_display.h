@@ -1,6 +1,5 @@
 #include "this_lora.h"
 #include <U8g2lib.h>
-
 #include <QMC5883LCompass.h>
 
 QMC5883LCompass compass;
@@ -55,7 +54,7 @@ String decodeMorse(String morse) {
   if (morse == "-..-") return "X";
   if (morse == "-.--") return "Y";
   if (morse == "--..") return "Z";
-  if( morse == ".-.-.") return "\n";
+  if ( morse == ".-.-.") return "\n";
   return "";
 }
 
@@ -70,20 +69,6 @@ const char* mainMenuItems[] = {
 };
 
 const int mainMenuSize = sizeof(mainMenuItems) / sizeof(mainMenuItems[0]);  // Keep this here
-
-struct Location {
-  const char* name;
-  float lat;
-  float lon;
-  unsigned long lastUpdated;
-};
-
-Location locationList[] = {
-  {"Alice", 17.385, 78.486, 1690000000},
-  {"Bob", 17.400, 78.480, 1690000500},
-  {"Charlie", 17.390, 78.485, 1690001000}
-};
-
 
 
 
@@ -152,6 +137,17 @@ void init_display() {
   } else {
     Serial.println("Display(0x3c) Not Found");
   }
+}
+
+
+void printCurrTime(unsigned long mill_time,bool id=false) {
+  unsigned long t = (mill_time) / 1000;
+  int y, mm, d, h, m, s;
+  unixToDateTime(t, y, mm, d, h, m, s);
+  u8g2.print(h);
+  u8g2.print(':'); u8g2.print(m);
+  u8g2.print(':'); u8g2.print(s);
+  if(id)u8g2.print('>');u8g2.print(myDeviceId);
 }
 int newhash = 482, oldhash = 2321;
 void render() {
@@ -238,33 +234,63 @@ void draw_inited_screen() {
 }
 // ---------- UI Drawing ----------
 void drawMenu(const char* const* items, int size, int selected) {
-  
+
   u8g2.firstPage();
   do {
-    if(items==NULL){
-      
-    const int leftPadding = 4;
-    const int menuWidth = SCREEN_WIDTH - 1 - leftPadding;
+    if (items == NULL) {
 
-    for (int i = 0; i < size; ++i) {
-      if (i == selected) u8g2.drawBox(leftPadding, i * 12, menuWidth - leftPadding, 12);
-      u8g2.setDrawColor(i == selected ? 0 : 1);
-      u8g2.setCursor(leftPadding + 2, 12 + i * 12);
-      u8g2.print(allUserChats[i].username);
-      u8g2.setDrawColor(1);
-    }
+      const int leftPadding = 4;
+      const int menuWidth = SCREEN_WIDTH - 1 - leftPadding;
+      const int itemsPerPage = 5; // number of visible rows
+
+      // Clamp selected index
+      if (selected < 0) selected = 0;
+      if (selected >= (int)allUserChats.size()) selected = allUserChats.size() - 1;
+
+      // Determine start index for scrolling
+      int startIndex = 0;
+      if (selected >= itemsPerPage) {
+        startIndex = selected - itemsPerPage + 1;
       }
-    else{
-    const int leftPadding = 4;
-    const int menuWidth = SCREEN_WIDTH - 1 - leftPadding;
 
-    for (int i = 0; i < size; ++i) {
-      if (i == selected) u8g2.drawBox(leftPadding, i * 12, menuWidth - leftPadding, 12);
-      u8g2.setDrawColor(i == selected ? 0 : 1);
-      u8g2.setCursor(leftPadding + 2, 12 + i * 12);
-      u8g2.print(items[i]);
-      u8g2.setDrawColor(1);
-    }}
+      int i = 0;
+      int visibleIndex = 0;
+      for (auto it = allUserChats.begin(); it != allUserChats.end(); ++it, ++i) {
+        if (i < startIndex) continue; // skip until scroll start
+        if (visibleIndex >= itemsPerPage) break; // stop after visible rows
+
+        Serial.print(i);
+        Serial.print(':');
+        Serial.println(it->second.username);
+
+        if (i == selected)
+          u8g2.drawBox(leftPadding, visibleIndex * 12, menuWidth - leftPadding, 12);
+
+        u8g2.setDrawColor(i == selected ? 0 : 1);
+        u8g2.setCursor(leftPadding + 2, 12 + visibleIndex * 12);
+        u8g2.print(it->second.username);
+        u8g2.setDrawColor(1);
+
+        visibleIndex++;
+      }
+
+
+    }
+    else {
+      const int leftPadding = 4;
+      const int menuWidth = SCREEN_WIDTH - 1 - leftPadding;
+      if (screen == SCREEN_MAIN) {
+        u8g2.setCursor(70, 20);
+        printCurrTime(millis() + millisAtStart,true);
+      }
+      for (int i = 0; i < size; ++i) {
+        if (i == selected) u8g2.drawBox(leftPadding, i * 12, menuWidth - leftPadding, 12);
+        u8g2.setDrawColor(i == selected ? 0 : 1);
+        u8g2.setCursor(leftPadding + 2, 12 + i * 12);
+        u8g2.print(items[i]);
+        u8g2.setDrawColor(1);
+      }
+    }
 
   } while (u8g2.nextPage());
 }
@@ -283,23 +309,23 @@ void drawGroupChat() {
     }
 
     for (int i = 0; i < GROUPCHAT_LINES && (i + startOffset) < groupMessageCount; i++) {
-      int messageIndex = (groupMessageIndex + startOffset + i) % MAX_GROUP_CHAT_MESSAGES;
+      int messageIndex = (groupMessageIndex  + i + MAX_GROUP_CHAT_MESSAGES) % MAX_GROUP_CHAT_MESSAGES;
       u8g2.setCursor(LEFT_PADDING, GROUPCHAT_TOP_PADDING + (1 + i) * LINE_HEIGHT);
       Serial.print("@re:");
       Serial.print(groupMessages[messageIndex].sender);
       Serial.print(": ");
       Serial.print(groupMessages[messageIndex].content);
       u8g2.print(i);
-      u8g2.print(groupMessages[messageIndex].sender.c_str());
+      u8g2.print(groupMessages[messageIndex].sender);
       u8g2.print(": ");
-      u8g2.print(groupMessages[messageIndex].content.c_str());
+      u8g2.print(groupMessages[messageIndex].content);
     }
 
     u8g2.drawBox(LEFT_PADDING, SCREEN_HEIGHT - LINE_HEIGHT, SCREEN_WIDTH - 1 - LEFT_PADDING, LINE_HEIGHT);
     u8g2.setDrawColor(0);
     u8g2.setCursor(LEFT_PADDING, SCREEN_HEIGHT);
     u8g2.print('>');
-    u8g2.print(currentText.c_str());
+    u8g2.print(currentText);
     u8g2.setDrawColor(1);
   } while (u8g2.nextPage());
 }
@@ -310,25 +336,49 @@ void drawChatWithUser() {
     u8g2.setCursor(0, MORSE_TOP);
     u8g2.print(morseInput.c_str());
 
-    User& currentChat = allUserChats[chatUserIndex];
-    int startOffset = 0;
-    const int maxDisplayMessages = 4;
-    if (currentChat.messageCount > maxDisplayMessages) {
-      startOffset = currentChat.messageCount - maxDisplayMessages;
+    int userCount = allUserChats.size();
+    std::vector<int> userIds;
+    for (const auto& pair : allUserChats) {
+      userIds.push_back(pair.first);
     }
 
-    for (int i = 0; i < maxDisplayMessages && (i + startOffset) < currentChat.messageCount; i++) {
-      int messageIndex = (currentChat.nextIndex + startOffset + i) % MAX_MESSAGES;
-      int senderId = currentChat.messages[messageIndex].senderId;
-      String content = currentChat.messages[messageIndex].content;
+    User& currentChat = allUserChats[userIds[chatUserIndex]];
+    int startOffset = 0;
+    if (currentChat.messageCount > MAX_MESSAGES) {
+      startOffset = currentChat.messageCount - MAX_MESSAGES;
+    }
+    for (int i = 0; i < currentChat.messageCount;i++){
+      
+    int messageIndex = (currentChat.startIndex + i) % MAX_MESSAGES;
 
-      if (senderId == myDeviceId) {
-        u8g2.setDrawColor(0);
-        u8g2.drawBox(LEFT_PADDING, (i + 1) * 12 + 1, SCREEN_WIDTH - 1 - LEFT_PADDING, 12);
+    bool sentByMe   = currentChat.messages[messageIndex].sentByMe;
+    String content  = currentChat.messages[messageIndex].content;
+
+    Serial.print(i);
+    Serial.print(") ");
+    Serial.print(sentByMe ? "Me: " : "Other: ");
+    Serial.println(content);
+
+    }
+
+    for (int i = 0; i < MAX_MESSAGES && (i + startOffset) < currentChat.messageCount; i++) {
+      int messageIndex = (currentChat.startIndex + startOffset + i) % MAX_MESSAGES;
+      bool sentByMe = currentChat.messages[messageIndex].sentByMe;
+      String content = currentChat.messages[messageIndex].content;
+      Serial.print(i);
+      Serial.print(',');
+      Serial.print(messageIndex);
+      Serial.print(',');
+      Serial.print(sentByMe?'t':'f');
+      Serial.print(',');
+      Serial.println(content); 
+      if (sentByMe) {
         u8g2.setDrawColor(1);
+        u8g2.drawBox(LEFT_PADDING, (i + 1) * 12 + 1, SCREEN_WIDTH - 1 - LEFT_PADDING, 12);
+        u8g2.setDrawColor(0);
         u8g2.setCursor(LEFT_PADDING + 2, (i + 2) * 12);
         u8g2.print("You: ");
-        u8g2.print(content.c_str());
+        u8g2.print(content);
         u8g2.setDrawColor(1);
       } else {
         u8g2.setCursor(LEFT_PADDING, (i + 2) * 12);
@@ -366,38 +416,40 @@ void drawLocationPerson() {
 
   int realHeading = ((int)heading + 90) % 360;
 
-  Location person = locationList[locationUserIndex];
+  int userCount = allUserChats.size();
+  std::vector<int> userIds;
+  for (const auto& pair : allUserChats) {
+    userIds.push_back(pair.first);
+  }
+  struct User u = allUserChats[userIds[locationUserIndex]];
 
-  // Randomize target's location slightly each time
-  locationList[locationUserIndex].lat += random(-10, 11) * 0.1;
-  locationList[locationUserIndex].lon += random(-10, 11) * 0.1;
-
-  float dist = calculateDistance(myLat, myLon, person.lat, person.lon);
-  float angle = Degrees(calculateBearing(myLat, myLon, person.lat, person.lon));
+  float dist = calculateDistance(lastKnownLat, lastKnownLon, u.lat, u.lon);
+  float angle = Degrees(calculateBearing(lastKnownLat, lastKnownLon, u.lat, u.lon));
   int projectedAngle = (int)(realHeading + angle) % 360;
 
   u8g2.firstPage();
   do {
     u8g2.setCursor(0, 12);
-    u8g2.print("User: "); u8g2.print(person.name);
+    u8g2.print("User: "); u8g2.print(u.username);
     u8g2.setCursor(0, 24);
-    u8g2.print("Lat: "); u8g2.print(person.lat, 3);
+    u8g2.print("Lat: "); u8g2.print(u.lat, 3);
     u8g2.setCursor(0, 36);
-    u8g2.print("Lon: "); u8g2.print(person.lon, 3);
+    u8g2.print("Lon: "); u8g2.print(u.lon, 3);
     u8g2.setCursor(0, 48);
     u8g2.print("Dist: "); u8g2.print(dist, 0); u8g2.print("m");
     drawArrow(SCREEN_WIDTH - 30, SCREEN_HEIGHT / 2, radians(projectedAngle), LOC_ARROW_FRONT_LEN, LOC_ARROW_BACK_LEN, LOC_ARROW_HEAD_DIFF, LOC_HEADANGLE, LOC_ARROW_HEADLEN, LOC_PADDING_CIRCLE);
     u8g2.setCursor(0, 60);
     u8g2.print("Updated: ");
-    u8g2.print(person.lastUpdated);
-
+    printCurrTime(u.lastUpdate + millisAtStart);
   } while (u8g2.nextPage());
+  delay(50);
+  render();
 }
 
 
 void sendSOS() {
   Serial.println("[SOS] Emergency signal sent!");
-  sendSOS_lora(myLat,myLon);
+  sendSOS_lora(lastKnownLat, lastKnownLon);
 
   u8g2.firstPage();
   do {

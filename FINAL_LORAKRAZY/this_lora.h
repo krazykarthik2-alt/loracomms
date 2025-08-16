@@ -1,8 +1,8 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include "this_gps.h"
-#include <map>
-
+#include<map>
+#include <vector>
 int myDeviceId = random(1, 0xffff);
 String myUserName = "kkrazy2";
 // LoRa pins (adjust if using different module pins)
@@ -26,80 +26,96 @@ struct ChatMessage
 ChatMessage groupMessages[MAX_GROUP_CHAT_MESSAGES];
 int groupMessageCount = 0;
 int groupMessageIndex = 0;
-
-void addGroupMessage(String sender, String content)
+void addGroupMessage(const String &sender, const String &content)
 {
-  // Determine the current index for the new message
-  int index = groupMessageIndex;
-
-  // Free the old memory if the array is full (circular buffer)
-  if (groupMessageCount == MAX_GROUP_CHAT_MESSAGES)
-  {
-    // free the old memory when needed here
-  }
-  groupMessages[index].sender = sender;
-  groupMessages[index].content = content;
-  Serial.println("@fnc:");
-  Serial.println(groupMessages[index].sender);
-
-  // Update the message count and index
-  if (groupMessageCount < MAX_GROUP_CHAT_MESSAGES)
-  {
+  // Reference to the slot where the new message will be stored
+    if (groupMessageCount < MAX_GROUP_CHAT_MESSAGES) {
     groupMessageCount++;
-  }
-  groupMessageIndex = (index + 1) % MAX_GROUP_CHAT_MESSAGES;
+  }else
+{
+  groupMessageIndex = (groupMessageIndex + 1) % MAX_GROUP_CHAT_MESSAGES;
 }
+  struct ChatMessage &msg = groupMessages[groupMessageIndex+groupMessageCount];
+
+  // Overwrite with new values
+  msg.sender  = sender;   // This will overwrite old String data automatically
+  msg.content = content;  // String destructor will free old content internally
+
+  Serial.println("@fnc:");
+  Serial.println(msg.sender);
+
+  
+}
+
 
 #define MAX_MESSAGES 20 // Max messages per user
 #define MAX_USERS 5     // Max number of users in your system
 
 struct Message
 {
-  int senderId;
+  bool sentByMe;
   String content;
 };
 
 // Define a structure for a user's entire chat history
-struct User
-{
+struct User {
   String username;
   float lat;
   float lon;
   unsigned long lastUpdate;
   Message messages[MAX_MESSAGES];
-  int messageCount = 0;
-  int nextIndex = 0;
+  int messageCount ;
+  int startIndex ;
+
+
+  User()
+    : username(""), lat(0.0), lon(0.0), lastUpdate(0),
+      messageCount(0),  startIndex(0)
+  {
+    for (int i = 0; i < MAX_MESSAGES; i++) {
+      messages[i].sentByMe = false;
+      messages[i].content = "";
+    }
+  }
 };
 
 // Global array to hold all user chats
 std::map <int, User> allUserChats;//userid, user
 
-// Helper function to find a user's index by username
-
-
 void addMessage(int userId, int senderId, String content)
 {
+  struct User &userChat = allUserChats[userId];
+
+  // Ensure indices are within bounds
+  userChat.startIndex %= MAX_MESSAGES;
+  int nextIndex = (userChat.startIndex + userChat.messageCount) % MAX_MESSAGES;
+
+  Message &msg = userChat.messages[nextIndex];
+  msg.sentByMe = (myDeviceId == senderId);
+  msg.content = content;
 
 
-  User &userChat = allUserChats[userId];
-  int index = userChat.nextIndex;
-
-  userChat.messages[index].senderId = senderId;
-  userChat.messages[index].content = content;
-
-  if (userChat.messageCount < MAX_MESSAGES)
-  {
+  if (userChat.messageCount < MAX_MESSAGES) {
     userChat.messageCount++;
+  } else {
+    // buffer is full so move startIndex forward
+    userChat.startIndex = (userChat.startIndex + 1) % MAX_MESSAGES;
   }
-  userChat.nextIndex = (index + 1) % MAX_MESSAGES;
+
+  for (int i = 0; i < userChat.messageCount; i++) {
+    int idx = (userChat.startIndex + i) % MAX_MESSAGES;
+    Serial.println(userChat.messages[idx].content);
+  }
 }
+
 
 void sendUsernameQuery(int targetId)
 {
-  String query = "QUERY:";
-  query += myDeviceId;
   LoRa.beginPacket();
-  LoRa.print(query);
+  LoRa.print("QUERY:");
+  LoRa.print(myDeviceId);
+  LoRa.print(":");
+  LoRa.print(myUserName);  
   LoRa.print(":");
   LoRa.print(targetId);
   LoRa.endPacket(true);
@@ -118,16 +134,19 @@ void sendUsernameResponse(int targetId)
   LoRa.endPacket(true);
 }
 // New helper to add a user when a message is received from a new ID
-struct User* addNewUser(int userId, String username = "")
+bool addNewUser(int userId, String username = "")
 {
+  Serial.printf("adding %d : %s\n", userId, username.c_str());
+
   if (allUserChats.size() < MAX_USERS)
   {
-    allUserChats[userId] = User();
-    allUserChats[userId].username = username;
-    return &allUserChats[userId];
+    struct User &u = allUserChats[userId];
+    u.username = username;
+    return true;
   }
-  return nullptr;
+  return false;
 }
+
 
 void disable_features_lora()
 {
@@ -152,7 +171,9 @@ void init_lora()
     LoRa.setSyncWord(0xF3); // Prevents cross-talk with other LoRa networks
     Serial.println("LoRa init OK");
     LoRa.beginPacket();
-    LoRa.print("HELLO");
+    LoRa.print( "B:");
+    LoRa.print( myDeviceId);
+    LoRa.print( ":-1:-1");
     LoRa.endPacket(true);
   }
   disable_features_lora();
@@ -222,16 +243,15 @@ void handleIncomingBeacon(String msg)
   float lat = msg.substring(second + 1, third).toFloat();
   float lon = msg.substring(third + 1).toFloat();
 
-  struct User *u = (allUserChats.find(userid) == allUserChats.end()) ? addNewUser(userid) : &allUserChats[userid];
-
-  //if u is nullptr, then display max-users reached
-  if (u == nullptr)
-  {
-    Serial.println("Max users reached");
-    return;
+  if ((allUserChats.find(userid) == allUserChats.end())) {
+    if (!addNewUser(userid))
+    {
+      Serial.println("Max users reached");
+      return;
+    }
   }
+  struct User *u = &allUserChats[userid];
 
-  // if not found in allUserChats
   if (u->username == "")
   {
     sendUsernameQuery(userid);
@@ -243,6 +263,8 @@ void handleIncomingBeacon(String msg)
     u->lon = lon;
     u->lastUpdate = millis();
   }
+  Serial.print("beacon received from ");
+  Serial.println(u->username);
 }
 
 
@@ -269,6 +291,9 @@ int receive_msg_lora()
     {
       incoming += (char)LoRa.read();
     }
+    Serial.print("rssi:");
+    Serial.println(
+      LoRa.packetRssi());
     Serial.println(incoming);
     lastMessage = incoming;
     if (incoming.startsWith("B:"))
@@ -278,7 +303,6 @@ int receive_msg_lora()
     }
     else if (incoming.startsWith("MSG:G:"))
     {
-      // Group chat message parsing
       String messageContent = incoming.substring(6);
       int colonIndex = messageContent.indexOf(':');
       int senderId = messageContent.substring(0, colonIndex).toInt();
@@ -288,6 +312,7 @@ int receive_msg_lora()
       addGroupMessage(senderUName, messageBody); // Displaying ID for now
       Serial.println("@after fnc:");
       Serial.println(groupMessages[0].sender);
+      return 0;
     }
     else if (incoming.startsWith("MSG:"))
     {
@@ -296,8 +321,10 @@ int receive_msg_lora()
       int colon1 = messageContent.indexOf(':');
       int receiverId = messageContent.substring(0, colon1).toInt();
 
-      if (receiverId != myDeviceId)
+      if (receiverId != myDeviceId){
+        Serial.println("msg not for us");
         return -1; // Not for us
+      }
 
       int gt = messageContent.indexOf('>');
       int senderId = messageContent.substring(colon1 + 1, gt).toInt();
@@ -310,21 +337,35 @@ int receive_msg_lora()
         addNewUser(senderId);
         sendUsernameQuery(senderId);
       }
-      struct User *u = &allUserChats[senderId];
       addMessage(senderId, senderId, messageBody);
+      return 0;
     }
     else if (incoming.startsWith("QUERY:"))
     {
       // Handle username query
       String content = incoming.substring(6);
-      int colonIndex = content.indexOf(':');
-      int senderId = content.substring(0, colonIndex).toInt();
-      int targetId = content.substring(colonIndex + 1).toInt();
-
+      int colonIndex1 = content.indexOf(':');
+      int colonIndex2 = content.indexOf(':',colonIndex1+1);
+      int senderId = content.substring(0, colonIndex1).toInt();
+      String senderUserName = content.substring(colonIndex1,colonIndex2);
+      int targetId = content.substring(colonIndex2 + 1).toInt();
+      
       if (targetId == myDeviceId)
       {
         sendUsernameResponse(senderId);
       }
+      if (allUserChats.find(senderId) == allUserChats.end())
+        {
+
+          Serial.println("notfound uid,creating");
+          addNewUser(senderId);
+        } else
+        {
+          Serial.println("found uid,changing uname");
+        }
+
+        struct User *u = &allUserChats[senderId];
+        u->username = senderUserName;
     }
     else if (incoming.startsWith("REPLY:"))
     {
@@ -339,23 +380,35 @@ int receive_msg_lora()
         int senderId = content.substring(colon1 + 1, colon2).toInt();
         String username = content.substring(colon2 + 1);
 
+        Serial.printf("parsed key:%d", senderId);
         // find user in allUserChats by userid
         if (allUserChats.find(senderId) == allUserChats.end())
         {
-          // If user not found, add them
-          struct User *u = addNewUser(senderId);
-          u->username = username; // Set the username directly
-        } else {
-          struct User *u = &allUserChats[senderId];
-          u->username = username;
+
+          Serial.println("notfound uid,creating");
+          addNewUser(senderId);
+        } else
+        {
+          Serial.println("found uid,changing uname");
         }
+
+        struct User *u = &allUserChats[senderId];
+        u->username = username;
+
+      } else {
+        Serial.println("targetId doesn't match.ignore");
       }
+      return 0;
     }
     else if (incoming.startsWith("SOS:"))
     {
       Serial.println("SOS received from " + incoming.substring(4));
       return 0;
     }
+  } else {
+
+    //  int idleRssi = LoRa.rssi();  // returns RSSI in dBm
+    //  Serial.println(idleRssi);
   }
   return -1;
 }
