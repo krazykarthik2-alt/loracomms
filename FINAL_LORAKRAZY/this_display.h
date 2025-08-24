@@ -309,12 +309,16 @@ void drawGroupChat() {
     }
 
     for (int i = 0; i < GROUPCHAT_LINES && (i + startOffset) < groupMessageCount; i++) {
-      int messageIndex = (groupMessageIndex  + i + MAX_GROUP_CHAT_MESSAGES) % MAX_GROUP_CHAT_MESSAGES;
+      int messageIndex = (groupMessageIndex  + i ) % MAX_GROUP_CHAT_MESSAGES;
       u8g2.setCursor(LEFT_PADDING, GROUPCHAT_TOP_PADDING + (1 + i) * LINE_HEIGHT);
       Serial.print("@re:");
+      Serial.print(messageIndex);
+      Serial.print(": ");
       Serial.print(groupMessages[messageIndex].sender);
       Serial.print(": ");
       Serial.print(groupMessages[messageIndex].content);
+
+      
       u8g2.print(i);
       u8g2.print(groupMessages[messageIndex].sender);
       u8g2.print(": ");
@@ -442,7 +446,6 @@ void drawLocationPerson() {
     u8g2.print("Updated: ");
     printCurrTime(u.lastUpdate + millisAtStart);
   } while (u8g2.nextPage());
-  delay(50);
   render();
 }
 

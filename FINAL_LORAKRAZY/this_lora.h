@@ -26,16 +26,12 @@ struct ChatMessage
 ChatMessage groupMessages[MAX_GROUP_CHAT_MESSAGES];
 int groupMessageCount = 0;
 int groupMessageIndex = 0;
+
 void addGroupMessage(const String &sender, const String &content)
 {
   // Reference to the slot where the new message will be stored
-    if (groupMessageCount < MAX_GROUP_CHAT_MESSAGES) {
-    groupMessageCount++;
-  }else
-{
-  groupMessageIndex = (groupMessageIndex + 1) % MAX_GROUP_CHAT_MESSAGES;
-}
-  struct ChatMessage &msg = groupMessages[groupMessageIndex+groupMessageCount];
+
+  struct ChatMessage &msg = groupMessages[(groupMessageIndex + groupMessageCount) % MAX_GROUP_CHAT_MESSAGES];
 
   // Overwrite with new values
   msg.sender  = sender;   // This will overwrite old String data automatically
@@ -44,7 +40,12 @@ void addGroupMessage(const String &sender, const String &content)
   Serial.println("@fnc:");
   Serial.println(msg.sender);
 
-  
+  if (groupMessageCount < MAX_GROUP_CHAT_MESSAGES) {
+    groupMessageCount++;
+  } else
+  {
+    groupMessageIndex = (groupMessageIndex + 1) % MAX_GROUP_CHAT_MESSAGES;
+  }
 }
 
 
@@ -115,7 +116,7 @@ void sendUsernameQuery(int targetId)
   LoRa.print("QUERY:");
   LoRa.print(myDeviceId);
   LoRa.print(":");
-  LoRa.print(myUserName);  
+  LoRa.print(myUserName);
   LoRa.print(":");
   LoRa.print(targetId);
   LoRa.endPacket(true);
@@ -321,7 +322,7 @@ int receive_msg_lora()
       int colon1 = messageContent.indexOf(':');
       int receiverId = messageContent.substring(0, colon1).toInt();
 
-      if (receiverId != myDeviceId){
+      if (receiverId != myDeviceId) {
         Serial.println("msg not for us");
         return -1; // Not for us
       }
@@ -345,27 +346,27 @@ int receive_msg_lora()
       // Handle username query
       String content = incoming.substring(6);
       int colonIndex1 = content.indexOf(':');
-      int colonIndex2 = content.indexOf(':',colonIndex1+1);
+      int colonIndex2 = content.indexOf(':', colonIndex1 + 1);
       int senderId = content.substring(0, colonIndex1).toInt();
-      String senderUserName = content.substring(colonIndex1,colonIndex2);
+      String senderUserName = content.substring(colonIndex1, colonIndex2);
       int targetId = content.substring(colonIndex2 + 1).toInt();
-      
+
       if (targetId == myDeviceId)
       {
         sendUsernameResponse(senderId);
       }
       if (allUserChats.find(senderId) == allUserChats.end())
-        {
+      {
 
-          Serial.println("notfound uid,creating");
-          addNewUser(senderId);
-        } else
-        {
-          Serial.println("found uid,changing uname");
-        }
+        Serial.println("notfound uid,creating");
+        addNewUser(senderId);
+      } else
+      {
+        Serial.println("found uid,changing uname");
+      }
 
-        struct User *u = &allUserChats[senderId];
-        u->username = senderUserName;
+      struct User *u = &allUserChats[senderId];
+      u->username = senderUserName;
     }
     else if (incoming.startsWith("REPLY:"))
     {
